@@ -5,14 +5,18 @@
 #include <vector>
 
 namespace detale {
-
+    template <typename T>
+    concept Object = requires(T t)
+    {
+        new T();
+    };
 }
 
-template<class T>
+template<detale::Object T>
 class ObjectPool {
 public:
     explicit ObjectPool(size_t num) {
-        memory = static_cast<int *>(malloc(num * sizeof(T)));
+        memory = static_cast<T *>(malloc(num * sizeof(T)));
         used.resize(num, false);
         if (memory == nullptr) {
             throw std::bad_alloc();
@@ -22,8 +26,8 @@ public:
         delete[] memory;
     }
 
-    template<typename... Args>
-    T& alloc(Args&&... args) { // валидаторы
+    template<typename... Args> // валидаторы
+    T& alloc(Args&&... args) {
         int vacation = -1;
         for (int i = 0; i < used.size(); i++) {
             if (used[i] == 0) {
@@ -36,8 +40,13 @@ public:
             vacation = expand();
         }
 
-        T * ptr = new(&memory[vacation]) T(std::forward<Args>(args)...); // валидаторы
+        T * ptr = new(&memory[vacation]) T(std::forward<Args>(args)...);
         return *ptr;
+    }
+
+    void free(T * ptr) {
+    };
+    void free(size_t i) {
     }
 
 private:
@@ -47,7 +56,7 @@ private:
     int expand() {
         int size = used.size();
 
-        int* mem = static_cast<int *>(realloc(memory, size * sizeof(T) * 2));
+        T* mem = static_cast<T *>(realloc(memory, size * sizeof(T) * 2));
         if (mem == nullptr) {
             throw std::bad_alloc();
         }
