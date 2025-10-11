@@ -1,10 +1,12 @@
 #ifndef OBJECTPOOL_HPP
 #define OBJECTPOOL_HPP
-#include <iostream>
-#include <ostream>
-#include <vector>
 
-namespace detale {
+#include <functional>
+#include <memory>
+#include <vector>
+#include <stdexcept>
+
+namespace detail {
     template <typename T>
     concept Object = requires(T t)
     {
@@ -12,58 +14,65 @@ namespace detale {
     };
 }
 
-template<detale::Object T>
+template<detail::Object T>
 class ObjectPool {
 public:
     explicit ObjectPool(size_t num) {
-        memory = static_cast<T *>(malloc(num * sizeof(T)));
-        used.resize(num, false);
-        if (memory == nullptr) {
-            throw std::bad_alloc();
+        if (num == 0) {
+            throw std::invalid_argument("ObjectPool size cannot be zero");
         }
-    };
-    ~ObjectPool() {
-        delete[] memory;
+        memory = static_cast<T*>(::operator new(sizeof(T) * num));
+        used.resize(num, false);
     }
 
-    template<typename... Args> // валидаторы
-    T& alloc(Args&&... args) {
-        int vacation = -1;
-        for (int i = 0; i < used.size(); i++) {
-            if (used[i] == 0) {
-                used[i] = 1;
-                vacation = i;
+    ~ObjectPool() {
+        for (size_t i = 0; i < used.size(); ++i) {
+            if (used[i]) { reinterpret_cast<T*>(&memory[i])->~T(); }
+        }
+        ::operator delete[](memory);
+    }
+
+    ObjectPool(const ObjectPool&) = delete;
+    ObjectPool& operator=(const ObjectPool&) = delete;
+    ObjectPool(ObjectPool&&) = delete;
+    ObjectPool& operator=(ObjectPool&&) = delete;
+
+    template<typename... Args>
+    decltype(auto) alloc(Args&&... args) {
+        int free_slot = -1;
+        for (size_t i = 0; i < used.size(); i++) {
+            if (!used[i]) {
+                used[i] = true;
+                free_slot = static_cast<int>(i);
                 break;
             }
         }
-        if (vacation == -1) {
-            vacation = expand();
+        if (free_slot == -1) {
+            throw std::bad_alloc();
         }
 
-        T * ptr = new(&memory[vacation]) T(std::forward<Args>(args)...);
-        return *ptr;
+        T* ptr = new(&memory[free_slot]) T(std::forward<Args>(args)...);
+
+        using Deleter = std::function<void(T*)>;
+        return std::unique_ptr<T, Deleter>(ptr, [this](T* p) { this->free(p); });
     }
 
-    void free(T * ptr) {
-    };
-    void free(size_t i) {
+    void free(T* ptr) {
+        if (!ptr) return;
+
+        auto index = static_cast<size_t>(reinterpret_cast<T*>(ptr) - memory);
+
+        if (index < used.size() && used[index]) {
+            ptr->~T();
+            used[index] = false;
+        } else {
+            throw std::runtime_error("ObjectPool out of memory");
+        }
     }
 
 private:
-    T * memory = nullptr;
+    T* memory = nullptr;
     std::vector<bool> used{};
-
-    int expand() {
-        int size = used.size();
-
-        T* mem = static_cast<T *>(realloc(memory, size * sizeof(T) * 2));
-        if (mem == nullptr) {
-            throw std::bad_alloc();
-        }
-        memory = mem;
-
-        return size;
-    }
 };
 
 #endif //OBJECTPOOL_HPP
