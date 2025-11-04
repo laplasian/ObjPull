@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 project(ObjPull)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -11,7 +11,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wcast-qual -Wshadow)
+add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wcast-qual -Wshadow
+            -D_GLIBCXX_ASSERTIONS
+            -D_GLIBCXX_DEBUG
+            -D_GLIBCXX_DEBUG_PEDANTIC
+            -D_GLIBCXX_SANITIZE_VECTOR
+)
 
 enable_testing()
 

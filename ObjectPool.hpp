@@ -3,23 +3,18 @@
 
 #include <vector>
 #include <stdexcept>
+#include <cstdint>
 
-namespace detail {
-    template <typename T>
-    concept Object = requires(T t)
-    {
-        new T();
-    };
-}
-
-template<detail::Object T>
+template<class T>
 class ObjectPool {
 public:
-    explicit ObjectPool(size_t num): data(sizeof(T) * num), used(num, false) {
+    explicit ObjectPool(size_t num) : data(sizeof(T) * num + alignof(T) - 1), used(num, false){
         if (num == 0) {
             throw std::invalid_argument("ObjectPool size cannot be zero");
         }
-        memory = reinterpret_cast<T*>(data.data());
+        auto base = reinterpret_cast<uintptr_t>(data.data());
+        uintptr_t aligned = (base + alignof(T) - 1) & ~(alignof(T) - 1);
+        memory = reinterpret_cast<T*>(aligned);
     }
 
     ~ObjectPool() {
@@ -34,7 +29,7 @@ public:
     ObjectPool& operator=(ObjectPool&&) = delete;
 
     template<typename... Args>
-    T& alloc(Args&&... args) {
+    [[nodiscard]] T& alloc(Args&&... args) {
         int free_slot = -1;
         for (size_t i = 0; i < used.size(); i++) {
             if (!used[i]) {
@@ -55,11 +50,12 @@ public:
 
     void free(T& obj) {
         T* ptr = &obj;
-        auto byte_diff = reinterpret_cast<char*>(ptr) - reinterpret_cast<char*>(memory);
 
-        if (byte_diff < 0 || static_cast<size_t>(byte_diff) >= data.size() * sizeof(T)) {
+        if (ptr < memory || ptr >= (memory + used.size())) {
             throw std::runtime_error("Object is not in pool");
         }
+
+        auto byte_diff = reinterpret_cast<char*>(ptr) - reinterpret_cast<char*>(memory);
         if (static_cast<size_t>(byte_diff) % sizeof(T) != 0) {
             throw std::runtime_error("Invalid pointer");
         }
@@ -75,14 +71,14 @@ public:
         }
     }
 
-    [[nodiscard]] size_t get_capacity() const { return used.size(); };
-    [[nodiscard]] size_t get_size() const { return size; };
+    [[nodiscard]] size_t get_capacity() const { return used.size(); }
+    [[nodiscard]] size_t get_size() const { return size; }
 
 private:
     std::vector<char> data{};
     T* memory{};
     std::vector<bool> used{};
-    size_t size {};
+    size_t size{};
 };
 
 #endif //OBJECTPOOL_HPP
